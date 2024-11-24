@@ -2,6 +2,8 @@ import subprocess
 import threading
 from typing import TextIO, Optional
 
+LC0_TIMEOUT: int = 5 # Seconds
+
 def _parse_best_move(pipe: TextIO, ret: dict) -> None:
     best_move: str = ''
     while 'bestmove' not in best_move:
@@ -10,7 +12,7 @@ def _parse_best_move(pipe: TextIO, ret: dict) -> None:
     ret['best_move'] = best_move.split()[1]
 
 
-def get_best_move(weights_path: str, fen: str, nodes: int = 1) -> Optional[str]:
+def predict_move(weights_path: str, fen: str, nodes: int = 1) -> Optional[str]:
     process = subprocess.Popen(
         ['lc0', f'--weights={weights_path}'],
         stdin=subprocess.PIPE,
@@ -42,7 +44,7 @@ def get_best_move(weights_path: str, fen: str, nodes: int = 1) -> Optional[str]:
 
         lc0_thread.start()
 
-        lc0_thread.join(5)
+        lc0_thread.join(LC0_TIMEOUT)
         
         if 'best_move' not in lc0_result.keys():
             return None
