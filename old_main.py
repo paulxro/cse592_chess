@@ -1,14 +1,10 @@
 import argparse
-import os
-import pathlib
 import chess
 import chess.pgn
 
 from stockfish import Stockfish
 
-# from run_lc0 import LCEngine
-from test import LCEngine
-
+from run_lc0 import predict_move
 
 default_fen: str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 maia_ratings: list = [1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900]
@@ -24,11 +20,6 @@ def _get_nearest_rating(elo: int) -> int:
 
 
 def main(args):
-    engines: dict[int, LCEngine] = {}
-
-    for elo in maia_ratings:
-        engines[elo] = LCEngine(elo)
-
     with open(args.pgn_file) as pgn:
         num_considered: int = 0
         num_correct_predicted: int = 0
@@ -38,15 +29,17 @@ def main(args):
             game = chess.pgn.read_game(pgn)
             board = game.board()
 
-            rating = -1
+            weights_path = args.weights_path
 
             if not args.rating:
                 avg_elo = (int(game.headers['WhiteElo']) + int(game.headers['BlackElo'])) / 2
-                rating = _get_nearest_rating(avg_elo)
+                rating_file = f'maia-{_get_nearest_rating(avg_elo)}.pb.gz'
+                weights_path += rating_file
+
+                print(f'Game [{game_idx}] -- AVG ELO: {avg_elo}; using {rating_file}')
+
             else:
-                rating = args.rating
-            
-            print(f'Game [{game_idx}] -- AVG ELO: {avg_elo}; using {rating}')
+                weights_path += f'maia-{args.rating}.pb.gz'
 
             for move in game.mainline_moves():
                 initial_board = board.fen()
@@ -60,10 +53,11 @@ def main(args):
 
                 board.pop()
 
-                predicted_move: str = engines[rating].predict_move(
-                    initial_board, args.nodes
+                predicted_move: str = predict_move(
+                    weights_path,
+                    initial_board,
+                    args.nodes
                 )
-
                 board.push(chess.Move.from_uci(
                     predicted_move
                 ))
@@ -95,7 +89,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--weights_path", type=pathlib.Path, default='/local/maia-chess/maia_weights/'
+        "--weights_path", type=str, default='/local/maia-chess/maia_weights/'
     )
     parser.add_argument(
         "--rating", type=int, default=0
