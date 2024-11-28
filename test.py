@@ -66,13 +66,14 @@ class LCEngine():
             return None
     
         # finally:
-        #     self.process.stdin.close()
-        #     self.process.stdout.close()
-        #     self.process.stderr.close()
-        #     self.process.terminate()
+ 
         return None
         
-    
+    def __del__(self):
+        self.process.stdin.close()
+        self.process.stdout.close()
+        self.process.stderr.close()
+        self.process.terminate()
         
 
 def _parse_best_move(pipe: TextIO, ret: dict) -> None:
