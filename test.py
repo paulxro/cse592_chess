@@ -4,8 +4,23 @@ from typing import TextIO, Optional
 
 LC0_TIMEOUT: int = 2 # Seconds
 
+thread_num: int = 0
+num_predicting: int = 0
+
+constructor_mut = threading.Lock()
+constructor_cv  = threading.Condition(constructor_mut)
+
+
 class LCEngine():
     def __init__(self, elo):
+        global num_predicting, constructor_cv
+
+        with constructor_cv:
+            while num_predicting > 14:
+                constructor_cv.wait()
+
+            num_predicting += 1
+
         self.elo = elo
         nearest_rating = self._get_nearest_rating(self.elo)
         weights_path = "/local/maia-chess/maia_weights/" + f'maia-{nearest_rating}.pb.gz'
@@ -70,6 +85,12 @@ class LCEngine():
         return None
         
     def __del__(self):
+        global num_predicting, constructor_cv
+
+        with constructor_cv:
+            num_predicting -= 1
+            constructor_cv.notify()
+
         self.process.stdin.close()
         self.process.stdout.close()
         self.process.stderr.close()

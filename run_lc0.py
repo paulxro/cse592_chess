@@ -6,6 +6,8 @@ LC0_TIMEOUT: int = 10 # Seconds
 
 num_predicting: int = 0
 
+
+
 def _parse_best_move(pipe: TextIO, ret: dict) -> None:
     best_move: str = ''
     while 'bestmove' not in best_move:
