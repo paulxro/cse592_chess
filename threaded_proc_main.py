@@ -10,7 +10,7 @@ from test import LCEngine
 
 game_results_mut = threading.Lock()
 
-DELTA: int = 1
+DELTA: int = 7
 ELO_DELTA: int = 500
 
 default_fen: str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -117,16 +117,44 @@ def _run_game_eval(game, depth: int = 15, delta: int = DELTA):
 
     sf_res = []
     lc_res = []
+    
+    sf_res_initialthird = []
+    lc_res_initialthird = []
+    
+    sf_res_middlethird = []
+    lc_res_middlethird = []
+    
+    sf_res_finalthird = []
+    lc_res_finalthird = []
 
+    count = 0
+    n = len(results)
     for result in results:
         sf_dev, lc_dev, _ = result
-
+        if count < (n // 3):
+            sf_res_initialthird.append(sf_dev)
+            lc_res_initialthird.append(lc_dev)
+        elif count < ((2 * n) // 3):
+            sf_res_middlethird.append(sf_dev)
+            lc_res_middlethird.append(lc_dev)
+        else:
+            sf_res_finalthird.append(sf_dev)
+            lc_res_finalthird.append(lc_dev)
         sf_res.append(sf_dev)
         lc_res.append(lc_dev)
+        count += 1
+    
+    sf_res_means = [statistics.mean(sf_res_initialthird),
+                    statistics.mean(sf_res_middlethird),
+                    statistics.mean(sf_res_finalthird)]
+    lc_res_means = [statistics.mean(lc_res_initialthird),
+                    statistics.mean(lc_res_middlethird),
+                    statistics.mean(lc_res_finalthird)]
     
     with game_results_mut:
-        game_results.append([sf_avg / len(results), lc_avg / len(results)])
+        # game_results.append([sf_avg / len(results), lc_avg / len(results)])
         # game_results.append([statistics.median(sf_res), statistics.median(lc_res)])
+        game_results.append([sf_res_means, lc_res_means])
 
     print(f"Done game[{game.game_id}]")
     
@@ -234,7 +262,7 @@ def main(args):
 
         thread_pool = []
 
-        for game_idx in range(5000):
+        for game_idx in range(350):
             game = chess.pgn.read_game(pgn)
 
             game.__setattr__('game_id', game_idx)
@@ -247,7 +275,10 @@ def main(args):
 
             avg_elo = (int(game.headers['WhiteElo']) + int(game.headers['BlackElo'])) / 2
 
-            if avg_elo > 1200 or len(list(game.mainline_moves())) <= DELTA:
+            # if avg_elo > 1200 or len(list(game.mainline_moves())) <= DELTA:
+            #     continue
+
+            if (not (1300 < avg_elo < 1500)) or len(list(game.mainline_moves())) <= DELTA:
                 continue
         
             # print(game_idx)
@@ -273,17 +304,23 @@ def main(args):
         sf_avg: float = 0.0
         lc_avg: float = 0.0
         
+        sf_avgs = [0] * 3
+        lc_avgs = [0] * 3
+        
         for game_res in game_results:
             sf_res, lc_res = game_res
-
-            sf_avg += sf_res
-            lc_avg += lc_res
-
-        print(sf_avg / len(game_results), lc_avg / len(game_results))
-
-
+            for i, v in enumerate(sf_res):
+                sf_avgs[i] += v
+            for i, v in enumerate(lc_res):
+                lc_avgs[i] += v
+            # sf_avg += sf_res
+            # lc_avg += lc_res
             
-
+        
+            
+        with open(f"out_delta_{DELTA}_thirds.txt", "w") as f:
+            for i in range(3):
+                f.write(f"{i}, {sf_avgs[i] / len(game_results)} {lc_avgs[i] / len(game_results)}\n")
 
 
             # board = game.board()
