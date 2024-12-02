@@ -3,6 +3,8 @@ import chess
 import chess.pgn
 import threading
 import statistics
+import pprint
+import sys
 
 from stockfish import Stockfish
 from run_lc0 import predict_move
@@ -10,11 +12,18 @@ from test import LCEngine
 
 game_results_mut = threading.Lock()
 
-DELTA: int = 7
+DELTA: int = 1
 ELO_DELTA: int = 500
 
+TEST_DELTA: list = [1, 3, 5, 7]
+
+TEST_NUM_GAMES: int = 25
+
+# 3 x 4 x 25
+
 default_fen: str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-maia_ratings: list = [1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900]
+
+maia_ratings: list = [1200, 1500, 1800]
 
 game_results: list = []
 
@@ -60,7 +69,7 @@ def _run_position_eval(fen: str, sf, lc, delta: int) -> list:
     return [sf_eval['value'], lc_eval]
 
 
-def _run_game_eval(game, depth: int = 15, delta: int = DELTA):
+def _run_game_eval(game, depth: int = 15, delta: int = DELTA, res: dict = None):
     if not game.headers['WhiteElo'].isnumeric() or not game.headers['BlackElo'].isnumeric():
         return []
 
@@ -81,7 +90,7 @@ def _run_game_eval(game, depth: int = 15, delta: int = DELTA):
         positions.append(board.fen())
         board.push(move)
     
-    for i in range(len(positions) - DELTA):
+    for i in range(len(positions) - delta):
         sf_engine.set_fen_position(positions[i + delta])
         actual_eval = sf_engine.get_evaluation()
 
@@ -115,49 +124,50 @@ def _run_game_eval(game, depth: int = 15, delta: int = DELTA):
     
     # print(f'[{avg_elo}]: {sf_avg / len(results)} {lc_avg / len(results)}')
 
-    sf_res = []
-    lc_res = []
+    # sf_res = []
+    # lc_res = []
     
-    sf_res_initialthird = []
-    lc_res_initialthird = []
+    # sf_res_initialthird = []
+    # lc_res_initialthird = []
     
-    sf_res_middlethird = []
-    lc_res_middlethird = []
+    # sf_res_middlethird = []
+    # lc_res_middlethird = []
     
-    sf_res_finalthird = []
-    lc_res_finalthird = []
+    # sf_res_finalthird = []
+    # lc_res_finalthird = []
 
-    count = 0
-    n = len(results)
-    for result in results:
-        sf_dev, lc_dev, _ = result
-        if count < (n // 3):
-            sf_res_initialthird.append(sf_dev)
-            lc_res_initialthird.append(lc_dev)
-        elif count < ((2 * n) // 3):
-            sf_res_middlethird.append(sf_dev)
-            lc_res_middlethird.append(lc_dev)
-        else:
-            sf_res_finalthird.append(sf_dev)
-            lc_res_finalthird.append(lc_dev)
-        sf_res.append(sf_dev)
-        lc_res.append(lc_dev)
-        count += 1
+    # count = 0
+    # n = len(results)
+    # for result in results:
+    #     sf_dev, lc_dev, _ = result
+    #     if count < (n // 3):
+    #         sf_res_initialthird.append(sf_dev)
+    #         lc_res_initialthird.append(lc_dev)
+    #     elif count < ((2 * n) // 3):
+    #         sf_res_middlethird.append(sf_dev)
+    #         lc_res_middlethird.append(lc_dev)
+    #     else:
+    #         sf_res_finalthird.append(sf_dev)
+    #         lc_res_finalthird.append(lc_dev)
+    #     sf_res.append(sf_dev)
+    #     lc_res.append(lc_dev)
+    #     count += 1
     
-    sf_res_means = [statistics.mean(sf_res_initialthird),
-                    statistics.mean(sf_res_middlethird),
-                    statistics.mean(sf_res_finalthird)]
-    lc_res_means = [statistics.mean(lc_res_initialthird),
-                    statistics.mean(lc_res_middlethird),
-                    statistics.mean(lc_res_finalthird)]
+    # sf_res_means = [statistics.mean(sf_res_initialthird),
+    #                 statistics.mean(sf_res_middlethird),
+    #                 statistics.mean(sf_res_finalthird)]
+    # lc_res_means = [statistics.mean(lc_res_initialthird),
+    #                 statistics.mean(lc_res_middlethird),
+    #                 statistics.mean(lc_res_finalthird)]
     
-    with game_results_mut:
+    # with game_results_mut:
         # game_results.append([sf_avg / len(results), lc_avg / len(results)])
         # game_results.append([statistics.median(sf_res), statistics.median(lc_res)])
-        game_results.append([sf_res_means, lc_res_means])
+        # game_results.append([sf_res_means, lc_res_means])
+    with res['mut']:
+        res['data'].append([sf_avg / len(results), lc_avg / len(results)])
 
-    print(f"Done game[{game.game_id}]")
-    
+    # print(f"Done game[{game.game_id}]")    
 
         
 
@@ -253,183 +263,136 @@ def _get_nearest_rating(elo: int) -> int:
 
 
 def main(args):
-    with open(args.pgn_file) as pgn:
-        num_considered: int = 0
-        num_correct_predicted: int = 0
-        num_correct_optimal: int = 0
+    results: dict = {}
 
-        games_stats = []
+    for rating in maia_ratings:
+        game_count: int = 0
+        results[rating] = {}
 
-        thread_pool = []
+        with open(args.pgn_file) as pgn:
+            while game_count < TEST_NUM_GAMES:
+                if not pgn:
+                    break
 
-        for game_idx in range(350):
-            game = chess.pgn.read_game(pgn)
+                game = chess.pgn.read_game(pgn)
 
-            game.__setattr__('game_id', game_idx)
-
-            if not game.headers['WhiteElo'].isnumeric() or not game.headers['BlackElo'].isnumeric():
-                continue
+                if not game.headers['WhiteElo'].isnumeric() or not game.headers['BlackElo'].isnumeric():
+                    continue
                 
-            if abs((int(game.headers['WhiteElo']) - int(game.headers['BlackElo']))) > ELO_DELTA:
-                continue
+                if len(list(game.mainline_moves())) < max(TEST_DELTA):
+                    continue
 
-            avg_elo = (int(game.headers['WhiteElo']) + int(game.headers['BlackElo'])) / 2
+                white_elo: float = float(game.headers['WhiteElo'])
+                black_elo: float = float(game.headers['BlackElo'])
 
-            # if avg_elo > 1200 or len(list(game.mainline_moves())) <= DELTA:
-            #     continue
+                avg_elo:   float = (white_elo + black_elo) / 2
 
-            if (not (1300 < avg_elo < 1500)) or len(list(game.mainline_moves())) <= DELTA:
-                continue
-        
-            # print(game_idx)
+                if _get_nearest_rating(avg_elo) != rating:
+                    continue
 
-            # if game_idx in [4, 5,6]:
-            #     continue
+                if abs(white_elo - black_elo) > ELO_DELTA:
+                    continue
+                
+                game.__setattr__('game_id', 'lol')
+                delta_tpool: list = []
 
+                for delta in TEST_DELTA:
+                    if delta not in results[rating].keys():
+                        results[rating][delta] = {}
+                        results[rating][delta]['data'] = []
+                        results[rating][delta]['mut'] = threading.Lock()
+                    
+                    delta_thread = threading.Thread(
+                        target=(_run_game_eval),
+                        args=(game, 15, delta, results[rating][delta])
+                    )
 
-            eval_thread = threading.Thread(
-                target=_run_game_eval,
-                args=(game,)
-            )
+                    delta_thread.start()
 
-            eval_thread.start()
+                    delta_tpool.append(delta_thread)
 
-            thread_pool.append(eval_thread)
+                for thread in delta_tpool:
+                    thread.join()
+                
+                pprint.pprint(results)
+                print("---------------------")
 
-            # break
-        
-        for thread in thread_pool:
-            thread.join()
-
-        sf_avg: float = 0.0
-        lc_avg: float = 0.0
-        
-        sf_avgs = [0] * 3
-        lc_avgs = [0] * 3
-        
-        for game_res in game_results:
-            sf_res, lc_res = game_res
-            for i, v in enumerate(sf_res):
-                sf_avgs[i] += v
-            for i, v in enumerate(lc_res):
-                lc_avgs[i] += v
-            # sf_avg += sf_res
-            # lc_avg += lc_res
-            
-        
-            
-        with open(f"out_delta_{DELTA}_thirds.txt", "w") as f:
-            for i in range(3):
-                f.write(f"{i}, {sf_avgs[i] / len(game_results)} {lc_avgs[i] / len(game_results)}\n")
+                print(f'[{rating}] Done game {game_count}', file=sys.stderr)
+                
+                game_count += 1
 
 
-            # board = game.board()
+             
+                    
 
-            # inputs: list[str] = []
-            # outputs: list[str] = []
-
-            # for move in game.mainline_moves():
-            #     inputs.append(board.fen())
-            #     board.push(move)
-            #     outputs.append(board.fen())
-            
-            # predicted: list[str] = [''] * len(outputs)
-
-            # thread_pool = []
-
-            # weights_path = args.weights_path
-
-            # if not args.rating:
-            #     avg_elo = (int(game.headers['WhiteElo']) + int(game.headers['BlackElo'])) / 2
-            #     rating_file = f'maia-{_get_nearest_rating(avg_elo)}.pb.gz'
-            #     weights_path += rating_file
-
-            #     print(f'Game [{game_idx}] -- AVG ELO: {avg_elo}; using {rating_file}')
-
-            # else:
-            #     weights_path += f'maia-{args.rating}.pb.gz'
-
-            # board.reset()
-
-            # game_stats = []
-
-            # for i, move in enumerate(game.mainline_moves()):
-            #     initial_board = board.fen()
-
-            #     stockfish = Stockfish('/local/stockfish/stockfish-ubuntu-x86-64-avx2')
-            #     stockfish.set_fen_position(initial_board)
-            #     board.push(chess.Move.from_uci(
-            #         stockfish.get_best_move()
-            #     ))
-            #     best_board = board.fen()
-
-            #     board.pop()
-
-            #     board.push(move)
-
-            #     output_board = board.fen()
-
-            #     if best_board == output_board:
-            #         game_stats.append(1)
-            #     else:
-            #         game_stats.append(0)
-
-
-                # stockfish.g
+                    
+                    
 
                 
 
-                # board.pop()
 
-                # pred_thread = threading.Thread(
-                #     target=(_run_predict),
-                #     args=(inputs[i], weights_path, i, predicted)
-                # )
 
-                # pred_thread.start()
+    # with open(args.pgn_file) as pgn:
 
-                # thread_pool.append(pred_thread)
+    #     thread_pool = []
 
-                # predicted_move: str = predict_move(
-                #     weights_path,
-                #     initial_board,
-                #     args.nodes
-                # )
-                # board.push(chess.Move.from_uci(
-                #     predicted_move
-                # ))
-                # predicted_board = board.fen()
+    #     for game_idx in range(350):
+    #         game = chess.pgn.read_game(pgn)
 
-                # board.pop()
+    #         game.__setattr__('game_id', game_idx)
 
-                # board.push(move)
-                # output_board = board.fen()
+    #         if not game.headers['WhiteElo'].isnumeric() or not game.headers['BlackElo'].isnumeric():
+    #             continue
+                
+    #         if abs((int(game.headers['WhiteElo']) - int(game.headers['BlackElo']))) > ELO_DELTA:
+    #             continue
 
-                # if predicted_board == output_board:
-                #     num_correct_predicted += 1
-                # if best_board == output_board:
-                #     num_correct_optimal += 1
-                # num_considered += 1
-            # games_stats.append(game_stats)
+    #         avg_elo = (int(game.headers['WhiteElo']) + int(game.headers['BlackElo'])) / 2
+
+    #         # if avg_elo > 1200 or len(list(game.mainline_moves())) <= DELTA:
+    #         #     continue
+
+    #         if (not (1300 < avg_elo < 1500)) or len(list(game.mainline_moves())) <= DELTA:
+    #             continue
+        
+    #         # print(game_idx)
+
+    #         # if game_idx in [4, 5,6]:
+    #         #     continue
+
+
+    #         eval_thread = threading.Thread(
+    #             target=_run_game_eval,
+    #             args=(game,)
+    #         )
+
+    #         eval_thread.start()
+
+    #         thread_pool.append(eval_thread)
+
+    #         # break
+        
+    #     for thread in thread_pool:
+    #         thread.join()
+
+    #     sf_avg: float = 0.0
+    #     lc_avg: float = 0.0
+        
+    #     sf_avgs = [0] * 3
+    #     lc_avgs = [0] * 3
+        
+    #     for game_res in game_results:
+    #         sf_res, lc_res = game_res
+    #         for i, v in enumerate(sf_res):
+    #             sf_avgs[i] += v
+    #         for i, v in enumerate(lc_res):
+    #             lc_avgs[i] += v
             
-            # for thread in thread_pool:
-            #     thread.join()
+        
             
-            # for move in predicted:
-            #     print(move)
-            
-        # if num_considered == 0:
-        #     print("No moves have been looked at.")
-        #     return
-
-        # print(
-        #     f'Lc0\tcorrect: {num_correct_predicted} / {num_considered} ({num_correct_predicted/num_considered})'
-        # )
-        # print(
-        #     f'SF\tcorrect: {num_correct_optimal} / {num_considered} ({num_correct_optimal/num_considered})'
-        # )
-
-        # print(games_stats)
+    #     with open(f"out_delta_{DELTA}_thirds.txt", "w") as f:
+    #         for i in range(3):
+    #             f.write(f"{i}, {sf_avgs[i] / len(game_results)} {lc_avgs[i] / len(game_results)}\n")
 
 
 if __name__ == '__main__':
